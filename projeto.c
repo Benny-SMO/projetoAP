@@ -11,6 +11,14 @@ static void clear_screen(void) {
 #endif
 }
 
+static void pause_enter(void) {
+    printf("Carrega ENTER para continuar...");
+    fflush(stdout);
+
+    char tmp[8];
+    fgets(tmp, sizeof(tmp), stdin);
+}
+
 /* ================= CONFIG ================= */
 
 #define EMPTY '.'
@@ -222,6 +230,7 @@ static void game_play(Game *g) {
 
         if (strcmp(line, "u") == 0) {
             if (!undo(g)) printf("-> Nada para desfazer.\n");
+            pause_enter();
             continue;
         }
 
@@ -229,6 +238,7 @@ static void game_play(Game *g) {
         if (!parse_int(line, &colInput) ||
             colInput < 1 || colInput > g->cols) {
             printf("-> Coluna inválida.\n");
+            pause_enter();
             continue;
         }
 
@@ -236,6 +246,7 @@ static void game_play(Game *g) {
                              colInput - 1, g->symbols[g->turn]);
         if (row < 0) {
             printf("-> Coluna cheia.\n");
+            pause_enter();
             continue;
         }
 
