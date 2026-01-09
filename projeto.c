@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <time.h>
 
 static void clear_screen(void) {
 #ifdef _WIN32
@@ -42,6 +43,7 @@ typedef struct {
 
     char **board;
     char symbols[MAX_PLAYERS];
+    int isBot[MAX_PLAYERS];
 
     Move *hist;
     int histSize, histCap;
@@ -202,6 +204,48 @@ static int undo(Game *g) {
     return 1;
 }
 
+/* ================= BOT ================= */
+
+static int random_valid_column(Game *g) {
+    int valid[MAX_PLAYERS * 8]; // chega perfeitamente
+    int n = 0;
+
+    for (int c = 0; c < g->cols; c++) {
+        if (g->board[0][c] == EMPTY) valid[n++] = c;
+    }
+    if (n == 0) return -1;
+    return valid[rand() % n];
+}
+
+static int bot_choose_column(Game *g) {
+    char botSym = g->symbols[g->turn];
+
+    for (int c = 0; c < g->cols; c++) {
+        int r = board_drop(g->board, g->rows, c, botSym);
+        if (r != -1) {
+            int win = check_win(g->board, g->rows, g->cols, g->winLen, r, c, botSym);
+            g->board[r][c] = EMPTY;
+            if (win) return c;
+        }
+    }
+
+    for (int p = 0; p < g->nPlayers; p++) {
+        if (p == g->turn) continue;
+        char opp = g->symbols[p];
+
+        for (int c = 0; c < g->cols; c++) {
+            int r = board_drop(g->board, g->rows, c, opp);
+            if (r != -1) {
+                int win = check_win(g->board, g->rows, g->cols, g->winLen, r, c, opp);
+                g->board[r][c] = EMPTY;
+                if (win) return c;
+            }
+        }
+    }
+
+    return random_valid_column(g);
+}
+
 /* ================= JOGO ================= */
 
 static void print_help(void) {
@@ -219,11 +263,40 @@ static void game_play(Game *g) {
         clear_screen();
         board_print(g->board, g->rows, g->cols);
 
-        printf("Liga-%d | Jogador %d (%c) > ",
-               g->winLen, g->turn + 1, g->symbols[g->turn]);
-        fflush(stdout);
+if (g->isBot[g->turn]) {
+    int col = bot_choose_column(g);
+    if (col == -1) return;
 
-        if (!read_line(line, sizeof(line))) return;
+    int row = board_drop(g->board, g->rows, col, g->symbols[g->turn]);
+    hist_push(g, row, col, g->symbols[g->turn]);
+
+    printf("BOT (Jogador %d - %c) jogou na coluna %d\n",
+           g->turn + 1, g->symbols[g->turn], col + 1);
+
+    if (check_win(g->board, g->rows, g->cols, g->winLen, row, col, g->symbols[g->turn])) {
+        board_print(g->board, g->rows, g->cols);
+        printf("🏆 Jogador %d ganhou!\n", g->turn + 1);
+        pause_enter();
+        return;
+    }
+
+    if (board_full(g->board, g->cols)) {
+        board_print(g->board, g->rows, g->cols);
+        printf("🤝 Empate!\n");
+        pause_enter();
+        return;
+    }
+
+    pause_enter();
+    g->turn = (g->turn + 1) % g->nPlayers;
+    continue;
+}
+
+    printf("Liga-%d | Jogador %d (%c) > ",
+       g->winLen, g->turn + 1, g->symbols[g->turn]);
+    fflush(stdout);
+
+    if (!read_line(line, sizeof(line))) return;
 
         if (strcmp(line, "q") == 0) return;
         if (strcmp(line, "help") == 0) { print_help(); continue; }
@@ -273,6 +346,7 @@ static void game_play(Game *g) {
 /* ================= MENU ================= */
 
 int main(void) {
+    srand((unsigned)time(NULL));
     for (;;) {
         printf("\n=== 4 EM LINHA ===\n");
         printf("1) Novo jogo\n");
@@ -297,6 +371,12 @@ int main(void) {
 
         for (int i = 0; i < g.nPlayers; i++)
             g.symbols[i] = SYMBOLS[i];
+
+        for (int i = 0; i < g.nPlayers; i++) {
+            char msg[64];
+            snprintf(msg, sizeof(msg), "Jogador %d (%c) é BOT? (0=não, 1=sim): ", i + 1, g.symbols[i]);
+            g.isBot[i] = read_int_range(msg, 0, 1);
+        }
 
         g.turn = 0;
         g.board = board_create(g.rows, g.cols);
